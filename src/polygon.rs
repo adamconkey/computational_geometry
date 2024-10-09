@@ -9,14 +9,13 @@ use crate::{
 };
 
 
-pub struct Polygon<'a> {
-    anchor: &'a Vertex,
+#[derive(Clone)]
+pub struct NeighborMap<'a> {
     neighbors: HashMap<&'a Vertex, (&'a Vertex, &'a Vertex)>,
 }
 
-
-impl<'a> Polygon<'a> {
-    pub fn new(vertices: Vec<&'a Vertex>) -> Polygon<'a> {
+impl<'a> NeighborMap<'a> {
+    pub fn new(vertices: Vec<&'a Vertex>) -> NeighborMap<'a> {
         let mut neighbors = HashMap::new();
 
         let first = &vertices[0];
@@ -39,7 +38,38 @@ impl<'a> Polygon<'a> {
             }
         }
 
-        Polygon { anchor: &vertices[0], neighbors }
+        NeighborMap { neighbors }
+    }
+
+    pub fn len(&self) -> usize {
+        self.neighbors.len()
+    }
+
+    pub fn get(&self, v: &Vertex) -> (&Vertex, &Vertex) {
+        *self.neighbors
+            .get(v)
+            .expect("Every vertex should have its neighbor stored")
+    }
+
+    pub fn insert(&mut self, v: &'a Vertex, neighbors: (&'a Vertex, &'a Vertex)) {
+        self.neighbors.insert(v, neighbors);
+    }
+
+    pub fn remove(&mut self, v: &Vertex) {
+        self.neighbors.remove(v);
+    }
+}
+
+
+pub struct Polygon<'a> {
+    anchor: &'a Vertex,
+    neighbors: NeighborMap<'a>,
+}
+
+
+impl<'a> Polygon<'a> {
+    pub fn new(vertices: Vec<&'a Vertex>) -> Polygon<'a> {
+        Polygon { anchor: &vertices[0], neighbors: NeighborMap::new(vertices) }
     }
 
     pub fn from_vmap(vmap: &'a VertexMap) -> Polygon<'a> {
@@ -62,36 +92,27 @@ impl<'a> Polygon<'a> {
         let mut neighbors = self.neighbors.clone();
         let mut anchor = self.anchor;
 
+        // TODO tried to port to using a neighbormap so that it can offer
+        // more compact retrieval of prev/next but am having several 
+        // borrow errors here. Need to figure that out. Then should be 
+        // able to make convenience funcs to retrieve prev and next so
+        // that you don't always have to retrieve the full tuple and 
+        // index to it.
+        fn name(b: &mut test::Bencher) {
+            b.iter(|| /* benchmark code */)
+        }
         while neighbors.len() > 3 {
             let mut v2 = anchor;
             
             loop {
-                // TODO I'm wondering if it makes sense to have some private
-                // getters that would effectively just panic if the gets here
-                // are violated, since in this case it just means the polygon 
-                // is malformed or we messed up the map, but in that case it 
-                // should be non-recoverable. Then in the usage here we 
-                // wouldn't need to have all these expects, it would just 
-                // directly return the value and just encapsulate the failure 
-                // in the private function. Not sure if that's good practice.
-                let (v1, v3) = *neighbors
-                    .get(v2)
-                    .expect("Every vertex should have neighbors stored");
+                let (v1, v3) = neighbors.get(v2);
 
                 if self.diagonal(&LineSegment::new(v1, v3)) {
                     // We found an ear, need to add to the triangulation,
                     // remove the vertex, and update the neighbor map
 
-                    // TODO would like to make retrieval of just prev or just next 
-                    // cleaner, maybe encapsulate in helpers?
-                    let v4 = neighbors
-                        .get(v3)
-                        .expect("Every vertex should have neighbors stored")
-                        .1;
-                    let v0 = neighbors
-                        .get(v1)
-                        .expect("Every vertex should have neighbors stored")
-                        .0;
+                    let v4 = neighbors.get(v3).1;
+                    let v0 = neighbors.get(v1).0;
 
                     triangulation.push(LineSegment::new(v1, v3));
 
@@ -121,9 +142,8 @@ impl<'a> Polygon<'a> {
 
         // Do forward pass through hashmap to get all ordered edges
         loop {
-            let (_prev, next) = self.neighbors
-                .get(current)
-                .expect("Every vertex should have neighbors stored");
+            // TODO use more compact retrieval
+            let (_prev, next) = self.neighbors.get(current);
             edges.push(LineSegment::new(current, next));
 
             current = next;
@@ -136,17 +156,10 @@ impl<'a> Polygon<'a> {
         edges
     }
 
-    pub fn neighbors(&self, v: &Vertex) -> (&Vertex, &Vertex) {
-        *self.neighbors
-            .get(v)
-            .expect("Every vertex should have neighbors stored")
-        
-    }
-    
     pub fn in_cone(&self, ab: &LineSegment) -> bool {
         let a = ab.v1;
         let ba = &ab.reverse();
-        let (a0, a1) = self.neighbors(a);
+        let (a0, a1) = self.neighbors.get(a);
 
         if a0.left_on(&LineSegment::new(a, a1)) {
             return a0.left(ab) && a1.left(ba);
@@ -242,10 +255,10 @@ mod tests {
         let c = vmap.get("c").unwrap();
         let d = vmap.get("d").unwrap();
         
-        assert_eq!(polygon.neighbors(a), (d, b));
-        assert_eq!(polygon.neighbors(b), (a, c));
-        assert_eq!(polygon.neighbors(c), (b, d));
-        assert_eq!(polygon.neighbors(d), (c, a));
+        assert_eq!(polygon.neighbors.get(a), (d, b));
+        assert_eq!(polygon.neighbors.get(b), (a, c));
+        assert_eq!(polygon.neighbors.get(c), (b, d));
+        assert_eq!(polygon.neighbors.get(d), (c, a));
     }
 
     #[rstest]
@@ -260,12 +273,12 @@ mod tests {
         let e = vmap.get("e").unwrap();
         let f = vmap.get("f").unwrap();
         
-        assert_eq!(polygon.neighbors(a), (f, b));
-        assert_eq!(polygon.neighbors(b), (a, c));
-        assert_eq!(polygon.neighbors(c), (b, d));
-        assert_eq!(polygon.neighbors(d), (c, e));
-        assert_eq!(polygon.neighbors(e), (d, f));
-        assert_eq!(polygon.neighbors(f), (e, a));
+        assert_eq!(polygon.neighbors.get(a), (f, b));
+        assert_eq!(polygon.neighbors.get(b), (a, c));
+        assert_eq!(polygon.neighbors.get(c), (b, d));
+        assert_eq!(polygon.neighbors.get(d), (c, e));
+        assert_eq!(polygon.neighbors.get(e), (d, f));
+        assert_eq!(polygon.neighbors.get(f), (e, a));
     }
     
     #[rstest]
