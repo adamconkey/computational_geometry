@@ -23,13 +23,17 @@ My goal for this repo is to eventually have a complete implementation of the alg
 - Area
 - Triangulation - $O(n^2)$
 - Rotation and translation
-- Bounding box computation
-- Determination of extreme and interior points - $O(n^3)$ and $O(n^4)$ (for benchmarking)
+- Bounding box
+- Convex hull (various implementations for benchmarking)
+    - From interior points $O(n^4)$
+    - From extreme edges $O(n^3)$
+    - GiftWrapping $O(nh)$ for $h$ hull edges
+    - QuickHull $O(n^2)$
 
 ### On the Roadmap
-- Convex Hull (2D and 3D)
+- Graham scan for 2D convex hull
+- Convex Hull 3D
 - Voronoi Diagram
-- Benchmarking of different algorithms
 - Animated visualizations of algorithms
 
 ---
@@ -51,27 +55,28 @@ cargo run --features visualizer -- -v triangulation -f interesting_polygon_archi
 
 
 ```shell
-cargo run --features visualizer -- -v extreme-points -f interesting_polygon_archive -p skimage_horse
+cargo run --features visualizer -- -v convex_hull -f interesting_polygon_archive -p skimage_horse
 ```
 
-![Screen Shot 2025-02-15 at 3 32 58 PM](https://github.com/user-attachments/assets/5561f855-05c7-4611-9197-ec5c4c63c516)
+![Screen Shot 2025-03-02 at 11 00 53 AM](https://github.com/user-attachments/assets/1d10839e-d725-48cc-93c0-5031c9af075d)
+
 
 
 ---
 
 ## Benchmarks
 
-Some simple benchmarking capabilities are provided using [Criterion.rs](https://bheisler.github.io/criterion.rs/book/). These are mostly to provide empirical intuition on the runtime of algorithms. Currently only a couple benchmarks are setup, more will be added as more algorithms are implemented.
+Some simple benchmarking capabilities are provided using [Criterion.rs](https://bheisler.github.io/criterion.rs/book/). These are mostly to provide empirical intuition on the runtime of algorithms. Currently only a benchmark for 2D convex hull algorithms is setup, more will be added as more algorithms are implemented.
 
 You can run the benchmarks yourself with
 ```shell
-cargo bench --bench extreme_points --bench interior_points
+cargo bench --bench convex_hull
 ```
 
-Here is a visualization of one of the benchmarks to compute extreme points, comparing computing them from extreme edges $O(n^3)$ versus computing them from interior points with triangle checks $O(n^4)$:
+Here is a visualization comparing the various implementations:
 
-![Screen Shot 2025-02-02 at 11 51 21 AM](https://github.com/user-attachments/assets/e6550aec-eac0-4413-b6ec-9fd9526c0ae6)
+![Screen Shot 2025-03-02 at 10 07 37 AM](https://github.com/user-attachments/assets/e085b69f-bf81-41be-b875-ce22cbe0350c)
 
-These are both obviously bad algorithms, but they are what is implemented at the moment and provide some basis for comparison.
+This is obviously not super informative, but exists more as a starting infrastructure for benchmarking than a meaningful comparison at this stage.
 
 ---

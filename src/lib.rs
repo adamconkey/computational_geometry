@@ -17,3 +17,6 @@ pub mod triangulation;
 pub mod util;
 pub mod vector;
 pub mod vertex;
+
+#[cfg(test)]
+pub mod test_util;

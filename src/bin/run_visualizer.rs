@@ -1,16 +1,18 @@
 use clap::{Parser, ValueEnum};
+use geometer::convex_hull::{ConvexHullComputer, QuickHull};
 use geometer::error::FileError;
+use itertools::Itertools;
 use random_color::RandomColor;
 
 use geometer::polygon::Polygon;
-use geometer::triangulation::Triangulation;
+use geometer::triangulation::{EarClipping, Triangulation, TriangulationComputer};
 use geometer::util::load_polygon;
 
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum Visualization {
+    ConvexHull,
     Triangulation,
-    ExtremePoints,
 }
 
 
@@ -62,16 +64,25 @@ impl RerunVisualizer {
         Ok(RerunVisualizer { rec })
     }
 
-    pub fn visualize_polygon(&self, polygon: &Polygon, name: &String) -> Result<(), VisualizationError> {
+    pub fn visualize_polygon(
+        &self, 
+        polygon: &Polygon, 
+        name: &String, 
+        vertex_radius: f32
+    ) -> Result<(), VisualizationError> {
+        let vertex_color = RandomColor::new().to_rgb_array();
         self.rec.log(
             format!("{}/vertices", name),
-            &self.polygon_to_rerun_points(polygon),
+            &self.polygon_to_rerun_points(polygon)
+                .with_radii([vertex_radius])
+                .with_colors([vertex_color])
         )?;
 
+        let edge_color = RandomColor::new().to_rgb_array();
         self.rec.log(
             format!("{}/edges", name),
             &self.polygon_to_rerun_edges(polygon)
-                .with_colors([(3, 144, 252)])
+                .with_colors([edge_color])
         )?;
         
         Ok(())
@@ -79,10 +90,10 @@ impl RerunVisualizer {
 
     pub fn visualize_triangulation(&self, polygon: &Polygon, name: &String) -> Result<(), VisualizationError> {
         let name = format!("{name}/triangulation");
-        let triangulation = polygon.triangulation();
-        let rerun_meshes = self.triangulation_to_rerun_meshes(&triangulation);
+        let triangulation = EarClipping.triangulation(polygon);
+        let rerun_meshes = self.triangulation_to_rerun_meshes(&triangulation, polygon);
 
-        let _ = self.visualize_polygon(polygon, &name);
+        let _ = self.visualize_polygon(polygon, &name, 5.0);
         
         for (i, mesh) in rerun_meshes.iter().enumerate() {
             self.rec.log(
@@ -94,29 +105,17 @@ impl RerunVisualizer {
         Ok(())
     }
 
-    pub fn visualize_extreme_points(&self, polygon: &Polygon, name: &String) -> Result<(), VisualizationError> {
-        let name = format!("{name}/extreme_points");
+    pub fn visualize_convex_hull(&self, polygon: &Polygon, name: &String) -> Result<(), VisualizationError> {    
+        let _ = self.visualize_polygon(polygon, &format!("{name}/polygon"), 5.0);
         
-        let _ = self.visualize_polygon(polygon, &name);
-        
-        let extreme_points: Vec<_> = polygon
-            .extreme_points()
+        let hull = QuickHull.convex_hull(polygon);
+        let points = hull.get_vertices()
             .iter()
-            .map(|id| polygon.get_point(id).unwrap())
-            .collect();
+            .map(|id| polygon.get_vertex(id).unwrap().coords.clone())
+            .collect_vec();
+        let hull_polygon = Polygon::new(points);
 
-        let rerun_points = rerun::Points3D::new(
-            extreme_points
-                .into_iter()
-                .map(|p| (p.x as f32, p.y as f32, 0.0))
-        );
-
-        self.rec.log(
-            format!("{}/extreme_points", name),
-            &rerun_points
-                .with_radii([5.0])
-                .with_colors([(252, 207, 3)]),
-        )?;
+        let _ = self.visualize_polygon(&hull_polygon, &format!("{name}/convex_hull"), 10.0);
 
         Ok(())
     }
@@ -138,14 +137,15 @@ impl RerunVisualizer {
         rerun::LineStrips3D::new([edge_points])
     }
     
-    fn triangulation_to_rerun_meshes(&self, triangulation: &Triangulation) -> Vec<rerun::Mesh3D> {
+    fn triangulation_to_rerun_meshes(&self, triangulation: &Triangulation, polygon: &Polygon) -> Vec<rerun::Mesh3D> {
         let mut meshes = Vec::new();
-        for (p1, p2, p3) in triangulation.to_points().iter() { 
+        for ids in triangulation.iter() {
             let color = RandomColor::new().to_rgb_array();
+            let t = polygon.get_triangle(&ids.0, &ids.1, &ids.2).unwrap();
             let points = [
-                [p1.x as f32, p1.y as f32, 0.0], 
-                [p2.x as f32, p2.y as f32, 0.0], 
-                [p3.x as f32, p3.y as f32, 0.0]
+                [t.p1.x as f32, t.p1.y as f32, 0.0], 
+                [t.p2.x as f32, t.p2.y as f32, 0.0], 
+                [t.p3.x as f32, t.p3.y as f32, 0.0]
             ]; 
             let mesh = rerun::Mesh3D::new(points)
                 .with_vertex_colors([color, color, color]);
@@ -164,7 +164,7 @@ fn main() -> Result<(), VisualizationError> {
     let name = format!("{}/{}", args.polygon, args.folder);
 
     match args.visualization {
-        Visualization::ExtremePoints => visualizer?.visualize_extreme_points(&polygon, &name)?,
+        Visualization::ConvexHull => visualizer?.visualize_convex_hull(&polygon, &name)?,
         Visualization::Triangulation => visualizer?.visualize_triangulation(&polygon, &name)?,
     };
     
